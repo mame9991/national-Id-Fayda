@@ -6,9 +6,10 @@ const QRCode = require('qrcode');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Use /tmp folder for cloud compatibility (e.g., Render)
+// Use /tmp for uploaded files (compatible with Render)
+const uploadDir = '/tmp';
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, '/tmp'),
+  destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
     const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, unique + path.extname(file.originalname));
@@ -16,8 +17,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static('public'));
+app.use('/uploads', express.static(uploadDir));
 
 app.get('/', (req, res) => {
   res.send(`
@@ -31,24 +31,21 @@ app.get('/', (req, res) => {
 
 app.post('/upload', upload.single('image'), async (req, res) => {
   try {
-    const filePath = `/tmp/${req.file.filename}`;
-    const fileExt = path.extname(req.file.originalname).substring(1);
-    const imageBuffer = fs.readFileSync(filePath);
-    const base64Image = `data:image/${fileExt};base64,${imageBuffer.toString('base64')}`;
-
-    const qrCode = await QRCode.toDataURL(base64Image);
+    const imageUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    const qrCode = await QRCode.toDataURL(imageUrl);
 
     res.send(`
-      <h2>Scan this QR Code to View the Image</h2>
+      <h2>Scan to View Image</h2>
       <img src="${qrCode}" alt="QR Code" />
+      <p><a href="${imageUrl}" target="_blank">Open Image Directly</a></p>
       <p><a href="/">Upload Another</a></p>
     `);
   } catch (err) {
-    console.error(err);
-    res.status(500).send('Failed to generate QR code.');
+    console.error('[QR ERROR]', err);
+    res.status(500).send('❌ Failed to generate QR code.<br><pre>' + err.message + '</pre>');
   }
 });
 
 app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+  console.log(`✅ Server running on port ${port}`);
 });
