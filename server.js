@@ -1,55 +1,54 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const QRCode = require('qrcode');
-
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
-// Setup storage for uploaded images
+// Use /tmp folder for cloud compatibility (e.g., Render)
 const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, 'uploads/'); // upload folder
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+  destination: (req, file, cb) => cb(null, '/tmp'),
+  filename: (req, file, cb) => {
+    const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, unique + path.extname(file.originalname));
   }
 });
+const upload = multer({ storage });
 
-const upload = multer({ storage: storage });
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static('public'));
 
-// Serve uploads folder statically
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-// Serve the upload form
 app.get('/', (req, res) => {
   res.send(`
-    <h1>Upload Image to Generate QR Code</h1>
+    <h2>Upload an Image to Generate a QR Code</h2>
     <form action="/upload" method="post" enctype="multipart/form-data">
       <input type="file" name="image" accept="image/*" required />
-      <button type="submit">Upload and Generate</button>
+      <button type="submit">Generate QR</button>
     </form>
   `);
 });
 
-// Handle image upload and generate QR code linking directly to the image file
 app.post('/upload', upload.single('image'), async (req, res) => {
   try {
-    const directImageUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
-    const qrCode = await QRCode.toDataURL(directImageUrl);
+    const filePath = `/tmp/${req.file.filename}`;
+    const fileExt = path.extname(req.file.originalname).substring(1);
+    const imageBuffer = fs.readFileSync(filePath);
+    const base64Image = `data:image/${fileExt};base64,${imageBuffer.toString('base64')}`;
+
+    const qrCode = await QRCode.toDataURL(base64Image);
 
     res.send(`
-      <h2>Your QR Code (Scan to view image directly):</h2>
+      <h2>Scan this QR Code to View the Image</h2>
       <img src="${qrCode}" alt="QR Code" />
-      <p><a href="${directImageUrl}" target="_blank">Open Image Directly</a></p>
       <p><a href="/">Upload Another</a></p>
     `);
   } catch (err) {
-    res.status(500).send('Error generating QR code');
+    console.error(err);
+    res.status(500).send('Failed to generate QR code.');
   }
 });
 
 app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
+  console.log(`Server running on port ${port}`);
 });
